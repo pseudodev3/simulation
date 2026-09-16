@@ -50,6 +50,7 @@ private:
     void seedHouseholdRelationships();
 
     void updateCitizen(Person& person, int stepMinutes);
+    void updateTravel(Person& person, int stepMinutes);
     void applyNeeds(Person& person, int stepMinutes);
     void updateRoutine(Person& person);
     void handleInteractions();
@@ -57,11 +58,12 @@ private:
 
     void moveTo(Person& person, int placeId, Activity activity, const std::string& reason = {});
     int chooseEveningPlace(Person& person);
+    int estimateTravelMinutes(int fromPlaceId, int toPlaceId) const;
 
     Place* placeById(int id);
     const Place* placeById(int id) const;
 
-    void emit(int personId, std::string type, std::string text, float importance);
+    void emit(int personId, std::string type, std::string text, float importance, int otherPersonId = -1);
     float random01();
     int randomInt(int minInclusive, int maxInclusive);
 };

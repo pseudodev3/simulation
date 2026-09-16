@@ -49,6 +49,7 @@ struct Relationship {
     int otherPersonId{-1};
     float familiarity{0.0f};
     float affinity{0.0f};
+    int lastNotableInteractionDay{-1};
 };
 
 struct Memory {
@@ -63,6 +64,8 @@ struct Event {
     int day{};
     int minute{};
     int personId{-1};
+    int otherPersonId{-1};
+    int placeId{-1};
     std::string type;
     std::string text;
     float importance{0.0f};

@@ -6,3 +6,6 @@ cmake-build-*/
 *.o
 *.obj
 *.exe
+episode/
+episode-*/
+episode-output/

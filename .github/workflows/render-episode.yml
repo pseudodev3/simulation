@@ -1,0 +1,71 @@
+name: Render autonomous episode
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Deterministic episode seed
+        required: true
+        default: '20260916'
+      population:
+        description: Number of residents
+        required: true
+        default: '30'
+      days:
+        description: Simulated days
+        required: true
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install renderer dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ffmpeg \
+            xvfb \
+            libasound2-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libxcursor-dev \
+            libxinerama-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Generate complete autonomous episode
+        run: |
+          xvfb-run -a ./build/simulation_episode \
+            '${{ inputs.seed }}' \
+            '${{ inputs.population }}' \
+            '${{ inputs.days }}' \
+            episode-output
+          test -s episode-output/mason-block.mp4
+          test -s episode-output/episode.json
+          test -s episode-output/timeline.txt
+
+      - name: Upload episode
+        uses: actions/upload-artifact@v4
+        with:
+          name: mason-block-seed-${{ inputs.seed }}
+          path: |
+            episode-output/mason-block.mp4
+            episode-output/episode.json
+            episode-output/timeline.txt
+          if-no-files-found: error
+          retention-days: 14

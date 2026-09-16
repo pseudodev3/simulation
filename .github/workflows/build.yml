@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Install raylib build dependencies
         run: |
           sudo apt-get update
@@ -25,9 +26,18 @@ jobs:
             libglu1-mesa-dev \
             libxcursor-dev \
             libxinerama-dev
+
       - name: Configure
         run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON
+
       - name: Build
         run: cmake --build build --parallel
+
       - name: Smoke test core simulation
         run: ./build/simulation 1337 50 2
+
+      - name: Smoke test autonomous episode planning
+        run: |
+          ./build/simulation_episode 1337 20 1 build/episode-plan --plan-only
+          test -s build/episode-plan/episode.json
+          test -s build/episode-plan/timeline.txt

@@ -2,105 +2,126 @@
 
 A procedural C++ city simulation built around one rule: **normal lives first, consequences later**.
 
-The goal is not to spawn crime randomly. Citizens begin with ordinary routines, jobs, homes, money, needs, friendships, stress and habits. Later conflict should emerge from those systems so the story feels earned.
+Citizens begin with homes, jobs, money, needs, routines, personalities, friendships, stress and memories. Crime is intentionally absent for now. Later conflict should emerge from those systems rather than from a hard-coded plot.
 
-## Phase 0 — life before crime
+## Core rule
 
-The current foundation models:
+We script **systems**, not outcomes.
 
-- assigned homes and workplaces
-- staggered work shifts
-- wages and daily living costs
-- hunger, energy, stress and loneliness
-- cafés, shops and a park
-- evening plans chosen from current needs and personality
-- repeated social contact and friendship formation
-- persistent memories
-- structured events with importance scores
-- deterministic seeded runs
-
-There is intentionally **no crime system yet**.
-
-The simulation should eventually produce chains like:
+The simulation may eventually produce a chain such as:
 
 `late for work -> poor performance -> loses job -> money falls -> rent pressure -> stress rises -> relationship problems -> risky decisions`
 
-No single system should know that entire story. Each system only changes state, and the next system reacts to it.
+No master script is allowed to say "make this person a criminal on day 20." Each subsystem only changes state and the next subsystem reacts to it.
 
-## Mason Block visual prototype
+## Autonomous episode loop
 
-`simulation_viewer` is the first graphical layer. It uses raylib and renders the existing simulation as a quiet, miniature residential block rather than changing the simulation rules.
+The production path is now `simulation_episode`.
 
-The viewer currently includes:
+Once started, it accepts **no runtime input**. A seed creates the world, C++ advances the entire neighborhood in deterministic 10-minute steps, the director scores events and decides what the audience should see, and the renderer turns that decision stream into a finished MP4.
 
-- 640x360 internal pixel canvas scaled crisply to 1280x720
-- muted lawns, houses, workplaces, café, shop, park and roads
-- tiny residents that visibly travel when their simulation location changes
-- dawn, daylight, dusk and night tinting
-- house/business windows and streetlights at night
-- a small bus stop and neighborhood props
-- resident selection with cash, needs and current activity
-- recent structured-event feed
-- pause and simulation speed controls
+```text
+seed
+  -> world simulation
+  -> needs / jobs / money / relationships / routines
+  -> structured events
+  -> autonomous director
+  -> camera target + shot duration + caption
+  -> raylib frame renderer
+  -> ffmpeg
+  -> mason-block.mp4
+```
 
-The renderer is deliberately separate from `simulation_core`: the simulation can still run headless at high speed later, while the visual layer can replay or follow interesting periods for YouTube.
+The same seed + population + day count reproduces the same simulation and shot plan.
 
-### Viewer controls
+### What the director currently does
 
-- `Space` — pause/resume
-- `1` / `2` / `3` — 1x / 3x / 8x simulation speed
-- `N` — advance one 10-minute simulation step
-- `Tab` — toggle place labels
-- click a resident — inspect their current life state
+- stays wide during ordinary life
+- creates establishing beats around morning, lunch, evening and night
+- follows a resident when a meaningful event belongs to them
+- holds longer on higher-importance events
+- generates captions from the actual simulation event stream
+- never changes the simulation state
+
+The director observes the world. It does not cause the story.
 
 ## Build
 
-Raylib is fetched automatically by CMake for the viewer.
+Raylib is fetched automatically by CMake.
 
 ```bash
 cmake -S . -B build
 cmake --build build
 ```
 
-Run the quiet-neighborhood viewer:
+FFmpeg must be available in `PATH` when rendering video.
+
+## Generate an episode automatically
+
+Default run: seed `20260916`, 30 residents, 7 simulated days.
 
 ```bash
-./build/simulation_viewer
+./build/simulation_episode
 ```
 
-Optional seed and population:
+Custom run:
 
 ```bash
-./build/simulation_viewer 20260916 30
+./build/simulation_episode <seed> <population> <days> <output_dir>
+./build/simulation_episode 48192 30 7 episode-001
 ```
 
-Run the headless simulation:
+Outputs:
+
+```text
+episode-001/
+  episode.json      # autonomous shot plan + event stream
+  timeline.txt      # readable story timeline
+  mason-block.mp4   # finished video
+```
+
+Useful development flags:
 
 ```bash
-./build/simulation
-./build/simulation <seed> <population> <days>
-./build/simulation 20260916 50 14
+./build/simulation_episode 48192 30 7 episode-001 --plan-only
+./build/simulation_episode 48192 30 1 smoke --smoke
+./build/simulation_episode 48192 30 7 episode-001 --keep-frames
 ```
 
-Using the same seed and settings should reproduce the same simulation run.
+`--plan-only` is the fastest way to inspect whether the autonomous simulation and director are behaving correctly before spending time rendering video.
 
-To build only the headless core without raylib:
+## GitHub Actions episode render
 
-```bash
-cmake -S . -B build -DSIMULATION_BUILD_VIEWER=OFF
-cmake --build build
-```
+The **Render autonomous episode** workflow can generate an MP4 entirely in GitHub Actions. Supply a seed, population and day count, then download the produced artifact containing the video, JSON plan and timeline.
 
-## Direction
+## Current life systems
 
-Next milestones:
+- assigned homes and workplaces
+- staggered work shifts
+- wages and daily living costs
+- hunger, energy, stress and loneliness
+- café, shop and park behavior
+- evening plans derived from needs and personality
+- repeated social contact and friendship formation
+- persistent memories
+- deterministic seeded runs
+- structured event importance scoring
+- autonomous episode direction
 
-1. make the neighborhood itself more physical: sidewalks, door/room entry, groceries and objects carried home
-2. commuting, lateness and days off
-3. employment performance, warnings, layoffs and job searching
+There is intentionally **no crime system yet**.
+
+## Visual direction
+
+Mason Block is a quiet miniature residential neighborhood rendered on a crisp 640x360 pixel canvas and scaled to 1280x720 for the final video. Residents move between simulated locations; day/night tinting, lit windows, streetlights, roads, homes, work buildings, the café, shop and park are all visualizations of the current world state.
+
+`simulation_viewer` still exists, but it is debug tooling only. The YouTube content path is `simulation_episode`, which runs without human control once started.
+
+## Next simulation milestones
+
+1. physical movement: sidewalks, doors, routes and actual commuting time
+2. groceries, food at home, possessions and household routines
+3. lateness, work performance, warnings, layoffs and job searching
 4. households, friendships, dating, arguments and grudges
 5. bills, debt and meaningful material pressure
-6. event director that automatically follows emerging stories
+6. stronger director logic for recurring characters and multi-day story arcs
 7. only then: crime, witnesses, police and consequences
-
-The renderer and future YouTube camera system should consume the same world state and structured event stream rather than controlling the simulation.

@@ -20,6 +20,9 @@ struct CitizenSnapshot {
     int id{};
     std::string name;
     int currentPlaceId{-1};
+    int originPlaceId{-1};
+    int destinationPlaceId{-1};
+    float travelProgress{1.0f};
     Activity activity{Activity::AtHome};
     float cash{};
     float hunger{};
@@ -39,6 +42,7 @@ struct DirectedShot {
     std::size_t stepIndex{};
     ShotKind kind{ShotKind::Establishing};
     int personId{-1};
+    int secondaryPersonId{-1};
     int placeId{-1};
     float seconds{0.35f};
     float importance{};

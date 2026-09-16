@@ -13,9 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install raylib build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libxcursor-dev \
+            libxinerama-dev
       - name: Configure
-        run: cmake -S . -B build
+        run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON
       - name: Build
         run: cmake --build build --parallel
-      - name: Smoke test
+      - name: Smoke test core simulation
         run: ./build/simulation 1337 50 2

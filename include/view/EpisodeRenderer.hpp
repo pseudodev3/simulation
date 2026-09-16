@@ -12,8 +12,8 @@ struct EpisodeRenderOptions {
     std::string outputFileName{"mason-block.mp4"};
     int renderFps{10};
     int outputFps{24};
-    int width{640};
-    int height{360};
+    int width{1920};
+    int height{1080};
     bool keepFrames{false};
     float maxVideoSeconds{0.0f};
 };

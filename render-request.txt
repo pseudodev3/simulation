@@ -1,0 +1,4 @@
+# Change any value and push this file to generate a fresh autonomous episode in GitHub Actions.
+seed=48192
+population=30
+days=7

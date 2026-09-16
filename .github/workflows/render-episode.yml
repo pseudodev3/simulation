@@ -15,6 +15,9 @@ on:
         description: Simulated days
         required: true
         default: '7'
+  push:
+    paths:
+      - 'render-request.txt'
 
 permissions:
   contents: read
@@ -26,6 +29,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve episode settings
+        id: episode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            seed='${{ inputs.seed }}'
+            population='${{ inputs.population }}'
+            days='${{ inputs.days }}'
+          else
+            seed=$(sed -n 's/^seed=//p' render-request.txt | head -n1)
+            population=$(sed -n 's/^population=//p' render-request.txt | head -n1)
+            days=$(sed -n 's/^days=//p' render-request.txt | head -n1)
+          fi
+
+          [[ "$seed" =~ ^[0-9]+$ ]] || { echo "Invalid seed"; exit 1; }
+          [[ "$population" =~ ^[0-9]+$ ]] || { echo "Invalid population"; exit 1; }
+          [[ "$days" =~ ^[0-9]+$ ]] || { echo "Invalid days"; exit 1; }
+
+          echo "seed=$seed" >> "$GITHUB_OUTPUT"
+          echo "population=$population" >> "$GITHUB_OUTPUT"
+          echo "days=$days" >> "$GITHUB_OUTPUT"
 
       - name: Install renderer dependencies
         run: |
@@ -51,9 +76,9 @@ jobs:
       - name: Generate complete autonomous episode
         run: |
           xvfb-run -a ./build/simulation_episode \
-            '${{ inputs.seed }}' \
-            '${{ inputs.population }}' \
-            '${{ inputs.days }}' \
+            '${{ steps.episode.outputs.seed }}' \
+            '${{ steps.episode.outputs.population }}' \
+            '${{ steps.episode.outputs.days }}' \
             episode-output
           test -s episode-output/mason-block.mp4
           test -s episode-output/episode.json
@@ -62,7 +87,7 @@ jobs:
       - name: Upload episode
         uses: actions/upload-artifact@v4
         with:
-          name: mason-block-seed-${{ inputs.seed }}
+          name: mason-block-seed-${{ steps.episode.outputs.seed }}
           path: |
             episode-output/mason-block.mp4
             episode-output/episode.json

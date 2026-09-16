@@ -77,32 +77,39 @@ DirectedShot directStep(const EpisodePlan& plan, std::size_t index, float baseli
 
     const Event* dominant = nullptr;
     for (const auto& event : step.events) {
-        if (!dominant || event.importance > dominant->importance) {
-            dominant = &event;
-        }
+        if (!dominant || event.importance > dominant->importance) dominant = &event;
     }
 
     if (dominant && dominant->importance >= 0.15f) {
         shot.importance = dominant->importance;
         shot.personId = dominant->personId;
+        shot.secondaryPersonId = dominant->otherPersonId;
+        shot.placeId = dominant->placeId;
         shot.caption = dominant->text;
 
         if (dominant->personId >= 0) {
             shot.kind = ShotKind::Person;
-            if (const auto* citizen = citizenById(step, dominant->personId)) {
-                shot.placeId = citizen->currentPlaceId;
+            if (shot.placeId < 0) {
+                if (const auto* citizen = citizenById(step, dominant->personId)) {
+                    shot.placeId = citizen->currentPlaceId >= 0
+                                 ? citizen->currentPlaceId : citizen->destinationPlaceId;
+                }
             }
         } else {
             shot.kind = ShotKind::Place;
         }
 
+        // Once the director commits to a close shot, hold it long enough for the
+        // viewer to understand what happened instead of instantly cutting away.
         if (dominant->importance >= 0.70f) {
-            shot.seconds = 3.8f + dominant->importance * 2.2f;
+            shot.seconds = 7.0f + dominant->importance * 2.0f;
         } else if (dominant->importance >= 0.40f) {
-            shot.seconds = 2.4f + dominant->importance * 1.8f;
+            shot.seconds = 5.4f + dominant->importance * 1.8f;
         } else {
-            shot.seconds = 1.0f + dominant->importance * 1.6f;
+            shot.seconds = 3.4f + dominant->importance * 2.2f;
         }
+
+        if (shot.secondaryPersonId >= 0) shot.seconds = std::max(5.5f, shot.seconds);
         return shot;
     }
 
@@ -112,7 +119,7 @@ DirectedShot directStep(const EpisodePlan& plan, std::size_t index, float baseli
     const bool night = step.minute == 22 * 60;
     if (dayOpening || lunch || evening || night) {
         shot.kind = ShotKind::Establishing;
-        shot.seconds = dayOpening ? 2.0f : 1.25f;
+        shot.seconds = dayOpening ? 2.8f : 1.6f;
         if (dayOpening) {
             shot.caption = "DAY " + std::to_string(step.day);
             shot.importance = 0.20f;
@@ -153,10 +160,20 @@ EpisodePlan EpisodeRunner::run(const EpisodeConfig& rawConfig) {
         snapshot.minute = world.minute();
         snapshot.citizens.reserve(world.citizens().size());
         for (const auto& person : world.citizens()) {
+            float progress = 1.0f;
+            if (person.activity == Activity::Commuting && person.travelMinutesTotal > 0) {
+                progress = 1.0f - static_cast<float>(person.travelMinutesRemaining)
+                                      / static_cast<float>(person.travelMinutesTotal);
+                progress = std::clamp(progress, 0.0f, 1.0f);
+            }
+
             snapshot.citizens.push_back(CitizenSnapshot{
                 person.id,
                 person.name,
                 person.currentPlaceId,
+                person.originPlaceId,
+                person.destinationPlaceId,
+                progress,
                 person.activity,
                 person.cash,
                 person.hunger,
@@ -167,9 +184,7 @@ EpisodePlan EpisodeRunner::run(const EpisodeConfig& rawConfig) {
         }
 
         const auto& allEvents = world.events();
-        for (; eventCursor < allEvents.size(); ++eventCursor) {
-            snapshot.events.push_back(allEvents[eventCursor]);
-        }
+        for (; eventCursor < allEvents.size(); ++eventCursor) snapshot.events.push_back(allEvents[eventCursor]);
 
         plan.steps.push_back(std::move(snapshot));
         plan.shots.push_back(directStep(plan, plan.steps.size() - 1, config.baselineSecondsPerStep));
@@ -183,9 +198,7 @@ void EpisodeRunner::writeArtifacts(const EpisodePlan& plan, const std::filesyste
 
     const auto jsonPath = outputDirectory / "episode.json";
     std::ofstream json(jsonPath);
-    if (!json) {
-        throw std::runtime_error("Could not write " + jsonPath.string());
-    }
+    if (!json) throw std::runtime_error("Could not write " + jsonPath.string());
 
     json << "{\n"
          << "  \"seed\": " << plan.seed << ",\n"
@@ -202,6 +215,7 @@ void EpisodeRunner::writeArtifacts(const EpisodePlan& plan, const std::filesyste
              << ",\"minute\":" << step.minute
              << ",\"kind\":\"" << shotKindLabel(shot.kind) << "\""
              << ",\"person_id\":" << shot.personId
+             << ",\"secondary_person_id\":" << shot.secondaryPersonId
              << ",\"place_id\":" << shot.placeId
              << ",\"seconds\":" << std::fixed << std::setprecision(2) << shot.seconds
              << ",\"importance\":" << std::fixed << std::setprecision(2) << shot.importance
@@ -212,6 +226,8 @@ void EpisodeRunner::writeArtifacts(const EpisodePlan& plan, const std::filesyste
             const auto& event = step.events[e];
             json << "{\"type\":\"" << escapeJson(event.type)
                  << "\",\"person_id\":" << event.personId
+                 << ",\"other_person_id\":" << event.otherPersonId
+                 << ",\"place_id\":" << event.placeId
                  << ",\"importance\":" << std::fixed << std::setprecision(2) << event.importance
                  << ",\"text\":\"" << escapeJson(event.text) << "\"}";
             if (e + 1 < step.events.size()) json << ',';
@@ -224,9 +240,7 @@ void EpisodeRunner::writeArtifacts(const EpisodePlan& plan, const std::filesyste
 
     const auto timelinePath = outputDirectory / "timeline.txt";
     std::ofstream timeline(timelinePath);
-    if (!timeline) {
-        throw std::runtime_error("Could not write " + timelinePath.string());
-    }
+    if (!timeline) throw std::runtime_error("Could not write " + timelinePath.string());
 
     timeline << "MASON BLOCK AUTONOMOUS EPISODE\n"
              << "seed=" << plan.seed << " population=" << plan.population

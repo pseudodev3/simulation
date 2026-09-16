@@ -81,6 +81,7 @@ jobs:
             '${{ steps.episode.outputs.days }}' \
             episode-output
           test -s episode-output/mason-block.mp4
+          test -s episode-output/mason-block-ambience.wav
           test -s episode-output/episode.json
           test -s episode-output/timeline.txt
 
@@ -90,6 +91,7 @@ jobs:
           name: mason-block-seed-${{ steps.episode.outputs.seed }}
           path: |
             episode-output/mason-block.mp4
+            episode-output/mason-block-ambience.wav
             episode-output/episode.json
             episode-output/timeline.txt
           if-no-files-found: error

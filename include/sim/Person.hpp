@@ -15,6 +15,12 @@ struct Person {
     int homeId{-1};
     int workplaceId{-1};
     int currentPlaceId{-1};
+    int originPlaceId{-1};
+    int destinationPlaceId{-1};
+    Activity destinationActivity{Activity::AtHome};
+    int travelMinutesTotal{0};
+    int travelMinutesRemaining{0};
+
     int eveningPlaceId{-1};
     int eveningPlanDay{-1};
 

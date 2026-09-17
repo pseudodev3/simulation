@@ -57,6 +57,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             ffmpeg \
+            espeak-ng \
             xvfb \
             libasound2-dev \
             libx11-dev \
@@ -73,7 +74,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Generate complete autonomous episode
+      - name: Generate autonomous picture track
         run: |
           xvfb-run -a ./build/simulation_episode \
             '${{ steps.episode.outputs.seed }}' \
@@ -81,9 +82,24 @@ jobs:
             '${{ steps.episode.outputs.days }}' \
             episode-output
           test -s episode-output/mason-block.mp4
-          test -s episode-output/mason-block-ambience.wav
           test -s episode-output/episode.json
           test -s episode-output/timeline.txt
+          mv episode-output/mason-block.mp4 episode-output/mason-block-silent.mp4
+
+      - name: Build final soundtrack and resident voices
+        run: |
+          python3 scripts/postprocess_episode_audio.py \
+            episode-output/episode.json \
+            episode-output/mason-block-silent.mp4 \
+            episode-output/mason-block.mp4
+          test -s episode-output/mason-block.mp4
+          test -s episode-output/dialogue-transcript.txt
+          rm episode-output/mason-block-silent.mp4
+
+      - name: Verify finished episode streams
+        run: |
+          ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of default=nw=1 episode-output/mason-block.mp4
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate -of default=nw=1 episode-output/mason-block.mp4
 
       - name: Upload episode
         uses: actions/upload-artifact@v4
@@ -91,8 +107,8 @@ jobs:
           name: mason-block-seed-${{ steps.episode.outputs.seed }}
           path: |
             episode-output/mason-block.mp4
-            episode-output/mason-block-ambience.wav
             episode-output/episode.json
             episode-output/timeline.txt
+            episode-output/dialogue-transcript.txt
           if-no-files-found: error
           retention-days: 14

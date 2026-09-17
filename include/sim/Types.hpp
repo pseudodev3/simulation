@@ -13,26 +13,25 @@ enum class Activity {
     Eating,
     Shopping,
     Socializing,
-    Relaxing
+    Relaxing,
+    Wandering,
+    Visiting,
+    Waiting
 };
 
-enum class PlaceType {
-    Home,
-    Workplace,
-    Cafe,
-    Shop,
-    Park
+enum class PlaceType { Home, Workplace, Cafe, Shop, Park };
+
+enum class IntentKind {
+    None, Sleep, StayHome, Work, Eat, Shop, Relax, Socialize, Visit, Wander, ReturnHome
 };
+
+enum class InteractionPhase { None, Notice, Approach, Engage, Disengage };
 
 struct Vec2 {
     float x{};
     float y{};
-
-    template <typename T>
-        requires requires(float a, float b) { T{a, b}; }
-    operator T() const {
-        return T{x, y};
-    }
+    template <typename T> requires requires(float a, float b) { T{a, b}; }
+    operator T() const { return T{x, y}; }
 };
 
 struct Place {
@@ -51,11 +50,34 @@ struct Traits {
     float kindness{0.5f};
 };
 
+struct BehaviorSignature {
+    float walkingSpeed{1.0f};
+    float routinePreference{0.5f};
+    float talkativeness{0.5f};
+    float spontaneity{0.5f};
+    float sleepTendency{0.5f};
+};
+
+struct Intent {
+    IntentKind kind{IntentKind::None};
+    int targetPlaceId{-1};
+    int targetPersonId{-1};
+    int createdDay{-1};
+    int createdMinute{-1};
+    int commitUntilMinute{-1};
+    float utility{0.0f};
+};
+
 struct Relationship {
     int otherPersonId{-1};
     float familiarity{0.0f};
     float affinity{0.0f};
+    float trust{0.0f};
+    float tension{0.0f};
     int lastNotableInteractionDay{-1};
+    int lastSeenDay{-1};
+    int lastSeenMinute{-1};
+    int interactionCount{0};
 };
 
 struct Memory {
@@ -64,6 +86,17 @@ struct Memory {
     std::string tag;
     int otherPersonId{-1};
     float intensity{0.0f};
+};
+
+struct Interaction {
+    int id{-1};
+    std::vector<int> participants;
+    int initiatorId{-1};
+    int placeId{-1};
+    InteractionPhase phase{InteractionPhase::None};
+    int startedDay{-1};
+    int startedMinute{-1};
+    int phaseMinute{-1};
 };
 
 struct Event {

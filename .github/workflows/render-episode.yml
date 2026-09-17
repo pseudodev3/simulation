@@ -57,7 +57,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             ffmpeg \
-            espeak-ng \
+            python3-venv \
             xvfb \
             libasound2-dev \
             libx11-dev \
@@ -67,6 +67,9 @@ jobs:
             libglu1-mesa-dev \
             libxcursor-dev \
             libxinerama-dev
+          python3 -m venv .venv
+          .venv/bin/pip install --disable-pip-version-check edge-tts
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Configure
         run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON -DCMAKE_BUILD_TYPE=Release
@@ -86,9 +89,9 @@ jobs:
           test -s episode-output/timeline.txt
           mv episode-output/mason-block.mp4 episode-output/mason-block-silent.mp4
 
-      - name: Build final soundtrack and resident voices
+      - name: Build naturalistic soundtrack and resident voices
         run: |
-          python3 scripts/postprocess_episode_audio.py \
+          .venv/bin/python scripts/postprocess_episode_audio.py \
             episode-output/episode.json \
             episode-output/mason-block-silent.mp4 \
             episode-output/mason-block.mp4

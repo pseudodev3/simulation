@@ -57,6 +57,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             ffmpeg \
+            espeak-ng \
             python3-venv \
             xvfb \
             libasound2-dev \
@@ -68,38 +69,24 @@ jobs:
             libxcursor-dev \
             libxinerama-dev
           python3 -m venv .venv
-          .venv/bin/pip install --disable-pip-version-check edge-tts
+          .venv/bin/pip install --disable-pip-version-check "kokoro>=0.9.4" soundfile numpy
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
-      - name: Smoke test resident voice synthesis
+      - name: Smoke test local resident voice synthesis
         shell: bash
         run: |
-          set -u
-          rm -f /tmp/mason-voice-check.mp3
-          for attempt in 1 2 3 4 5 6 7 8; do
-            echo "Edge TTS smoke test attempt $attempt/8"
-            if .venv/bin/edge-tts \
-              --voice en-US-AvaNeural \
-              --rate=-2% \
-              --pitch=-1Hz \
-              --volume=-6% \
-              --text "Mason Block voice check." \
-              --write-media /tmp/mason-voice-check.mp3 \
-              && test -s /tmp/mason-voice-check.mp3; then
-              ffprobe -v error -select_streams a:0 \
-                -show_entries stream=codec_name,duration \
-                -of default=nw=1 /tmp/mason-voice-check.mp3
-              exit 0
-            fi
-            rm -f /tmp/mason-voice-check.mp3
-            if [ "$attempt" -lt 8 ]; then
-              delay=$(( attempt * 5 ))
-              echo "Transient Edge TTS failure; retrying same voice in ${delay}s"
-              sleep "$delay"
-            fi
-          done
-          echo "Edge TTS remained unavailable after 8 attempts"
-          exit 1
+          .venv/bin/python - <<'PY'
+          from kokoro import KPipeline
+          import numpy as np
+          import soundfile as sf
+          pipeline = KPipeline(lang_code='a', device='cpu')
+          chunks = [np.asarray(audio, dtype=np.float32) for _, _, audio in pipeline('Mason Block voice check.', voice='af_heart', speed=0.99) if audio is not None]
+          if not chunks:
+              raise RuntimeError('Kokoro returned no smoke-test audio')
+          sf.write('/tmp/mason-voice-check.wav', np.concatenate(chunks), 24000, subtype='PCM_16')
+          PY
+          test -s /tmp/mason-voice-check.wav
+          ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of default=nw=1 /tmp/mason-voice-check.wav
 
       - name: Configure
         run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON -DCMAKE_BUILD_TYPE=Release

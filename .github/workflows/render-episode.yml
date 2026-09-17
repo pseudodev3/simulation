@@ -52,13 +52,17 @@ jobs:
           echo "population=$population" >> "$GITHUB_OUTPUT"
           echo "days=$days" >> "$GITHUB_OUTPUT"
 
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install renderer dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             ffmpeg \
             espeak-ng \
-            python3-venv \
             xvfb \
             libasound2-dev \
             libx11-dev \
@@ -68,14 +72,13 @@ jobs:
             libglu1-mesa-dev \
             libxcursor-dev \
             libxinerama-dev
-          python3 -m venv .venv
-          .venv/bin/pip install --disable-pip-version-check "kokoro>=0.9.4" soundfile numpy
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          python -m pip install --upgrade pip
+          python -m pip install "kokoro>=0.9.4" soundfile numpy
 
       - name: Smoke test local resident voice synthesis
         shell: bash
         run: |
-          .venv/bin/python - <<'PY'
+          python - <<'PY'
           from kokoro import KPipeline
           import numpy as np
           import soundfile as sf
@@ -83,7 +86,11 @@ jobs:
           chunks = [np.asarray(audio, dtype=np.float32) for _, _, audio in pipeline('Mason Block voice check.', voice='af_heart', speed=0.99) if audio is not None]
           if not chunks:
               raise RuntimeError('Kokoro returned no smoke-test audio')
-          sf.write('/tmp/mason-voice-check.wav', np.concatenate(chunks), 24000, subtype='PCM_16')
+          output = np.concatenate(chunks)
+          if output.size < 1000:
+              raise RuntimeError(f'Kokoro returned suspiciously short audio: {output.size} samples')
+          sf.write('/tmp/mason-voice-check.wav', output, 24000, subtype='PCM_16')
+          print(f'Kokoro OK: {output.size} samples ({output.size / 24000:.2f}s)')
           PY
           test -s /tmp/mason-voice-check.wav
           ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,duration -of default=nw=1 /tmp/mason-voice-check.wav
@@ -108,7 +115,7 @@ jobs:
 
       - name: Build naturalistic soundtrack and resident voices
         run: |
-          .venv/bin/python scripts/postprocess_episode_audio.py \
+          python scripts/postprocess_episode_audio.py \
             episode-output/episode.json \
             episode-output/mason-block-silent.mp4 \
             episode-output/mason-block.mp4

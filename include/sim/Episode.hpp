@@ -47,6 +47,8 @@ struct DirectedShot {
     float seconds{0.35f};
     float importance{};
     std::string caption;
+    std::string dialoguePrimary;
+    std::string dialogueSecondary;
 };
 
 struct EpisodePlan {

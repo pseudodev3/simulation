@@ -178,12 +178,15 @@ def synthesize_line(text: str, person_id: int, destination: Path) -> float:
     voice, rate, pitch = voice_settings(person_id)
     raw_mp3 = destination.with_suffix(".edge.mp3")
 
+    # edge-tts/argparse treats a separate negative value (for example ``--rate -8%``)
+    # as another command-line option. Keep the value attached to the option so both
+    # negative and positive resident prosody settings are parsed reliably.
     run([
         "edge-tts",
         "--voice", voice,
-        "--rate", rate,
-        "--pitch", pitch,
-        "--volume", "-6%",
+        f"--rate={rate}",
+        f"--pitch={pitch}",
+        "--volume=-6%",
         "--text", text,
         "--write-media", str(raw_mp3),
     ])

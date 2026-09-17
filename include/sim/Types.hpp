@@ -27,6 +27,12 @@ enum class PlaceType {
 struct Vec2 {
     float x{};
     float y{};
+
+    template <typename T>
+        requires requires(float a, float b) { T{a, b}; }
+    operator T() const {
+        return T{x, y};
+    }
 };
 
 struct Place {

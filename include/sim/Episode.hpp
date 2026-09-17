@@ -10,11 +10,7 @@
 
 namespace sim {
 
-enum class ShotKind {
-    Establishing,
-    Person,
-    Place
-};
+enum class ShotKind { Establishing, Person, Place };
 
 struct CitizenSnapshot {
     int id{};
@@ -29,50 +25,19 @@ struct CitizenSnapshot {
     float energy{};
     float stress{};
     float loneliness{};
+    Vec2 position{};
+    Vec2 velocity{};
+    float heading{};
+    int activeInteractionId{-1};
 };
 
-struct EpisodeStep {
-    int day{1};
-    int minute{};
-    std::vector<CitizenSnapshot> citizens;
-    std::vector<Event> events;
-};
-
+struct EpisodeStep { int day{1}; int minute{}; std::vector<CitizenSnapshot> citizens; std::vector<Event> events; };
 struct DirectedShot {
-    std::size_t stepIndex{};
-    ShotKind kind{ShotKind::Establishing};
-    int personId{-1};
-    int secondaryPersonId{-1};
-    int placeId{-1};
-    float seconds{0.35f};
-    float importance{};
-    std::string caption;
-    std::string dialoguePrimary;
-    std::string dialogueSecondary;
+    std::size_t stepIndex{}; ShotKind kind{ShotKind::Establishing}; int personId{-1}; int secondaryPersonId{-1}; int placeId{-1};
+    float seconds{0.35f}; float importance{}; std::string caption; std::string dialoguePrimary; std::string dialogueSecondary;
 };
-
-struct EpisodePlan {
-    std::uint32_t seed{};
-    int population{};
-    int days{};
-    int stepMinutes{10};
-    std::vector<Place> places;
-    std::vector<EpisodeStep> steps;
-    std::vector<DirectedShot> shots;
-};
-
-struct EpisodeConfig {
-    std::uint32_t seed{20260916};
-    int population{30};
-    int days{7};
-    int stepMinutes{10};
-    float baselineSecondsPerStep{0.35f};
-};
-
-class EpisodeRunner {
-public:
-    static EpisodePlan run(const EpisodeConfig& config);
-    static void writeArtifacts(const EpisodePlan& plan, const std::filesystem::path& outputDirectory);
-};
+struct EpisodePlan { std::uint32_t seed{}; int population{}; int days{}; int stepMinutes{10}; std::vector<Place> places; std::vector<EpisodeStep> steps; std::vector<DirectedShot> shots; };
+struct EpisodeConfig { std::uint32_t seed{20260916}; int population{30}; int days{7}; int stepMinutes{10}; float baselineSecondsPerStep{0.35f}; };
+class EpisodeRunner { public: static EpisodePlan run(const EpisodeConfig& config); static void writeArtifacts(const EpisodePlan& plan,const std::filesystem::path& outputDirectory); };
 
 } // namespace sim

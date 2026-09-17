@@ -26,6 +26,13 @@ struct Person {
 
     Activity activity{Activity::AtHome};
     Traits traits{};
+    BehaviorSignature behavior{};
+    Intent intent{};
+
+    // Perception / social state. These IDs are simulation truth, not renderer hints.
+    std::vector<int> visiblePeople;
+    int activeInteractionId{-1};
+    int interactionCooldownUntil{-1};
 
     float cash{100.0f};
     float hunger{10.0f};

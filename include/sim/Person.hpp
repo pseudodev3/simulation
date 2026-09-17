@@ -21,6 +21,14 @@ struct Person {
     int travelMinutesTotal{0};
     int travelMinutesRemaining{0};
 
+    // Authoritative locomotion state. Presentation consumes this; it does not invent routes.
+    Vec2 position{};
+    Vec2 previousPosition{};
+    Vec2 velocity{};
+    float heading{0.0f};
+    std::vector<Vec2> route;
+    int routeWaypoint{0};
+
     int eveningPlaceId{-1};
     int eveningPlanDay{-1};
 
@@ -29,7 +37,6 @@ struct Person {
     BehaviorSignature behavior{};
     Intent intent{};
 
-    // Perception / social state. These IDs are simulation truth, not renderer hints.
     std::vector<int> visiblePeople;
     int activeInteractionId{-1};
     int interactionCooldownUntil{-1};

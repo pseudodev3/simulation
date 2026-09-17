@@ -13,18 +13,16 @@ namespace sim {
 class World {
 public:
     World(std::uint32_t seed, int population = 50);
-
     void step(int minutes = 10);
     void runDays(int days, int minutesPerStep = 10);
 
     [[nodiscard]] int day() const { return day_; }
     [[nodiscard]] int minute() const { return minute_; }
     [[nodiscard]] std::uint32_t seed() const { return seed_; }
-
     [[nodiscard]] const std::vector<Person>& citizens() const { return citizens_; }
     [[nodiscard]] const std::vector<Place>& places() const { return places_; }
     [[nodiscard]] const std::vector<Event>& events() const { return events_; }
-
+    [[nodiscard]] const std::vector<Interaction>& interactions() const { return interactions_; }
     [[nodiscard]] std::string clockLabel() const;
     [[nodiscard]] std::string dailySummary() const;
 
@@ -34,11 +32,12 @@ private:
     int day_{1};
     int minute_{0};
     int population_{50};
+    int nextInteractionId_{1};
 
     std::vector<Place> places_;
     std::vector<Person> citizens_;
     std::vector<Event> events_;
-
+    std::vector<Interaction> interactions_;
     std::vector<int> homeIds_;
     std::vector<int> workplaceIds_;
     int cafeId_{-1};
@@ -48,21 +47,27 @@ private:
     void buildNeighborhood();
     void spawnCitizens();
     void seedHouseholdRelationships();
-
     void updateCitizen(Person& person, int stepMinutes);
     void updateTravel(Person& person, int stepMinutes);
     void applyNeeds(Person& person, int stepMinutes);
     void updateRoutine(Person& person);
+    void updateIntent(Person& person);
+    void applyIntent(Person& person);
+    void updatePerception();
     void handleInteractions();
+    void advanceInteractions();
     void handleEconomy(Person& person);
+    bool shouldInterruptIntent(const Person& person) const;
+    int chooseSocialTarget(const Person& person) const;
 
     void moveTo(Person& person, int placeId, Activity activity, const std::string& reason = {});
     int chooseEveningPlace(Person& person);
     int estimateTravelMinutes(int fromPlaceId, int toPlaceId) const;
-
     Place* placeById(int id);
     const Place* placeById(int id) const;
-
+    Person* personById(int id);
+    const Person* personById(int id) const;
+    void remember(Person& person, std::string tag, int otherPersonId, float intensity);
     void emit(int personId, std::string type, std::string text, float importance, int otherPersonId = -1);
     float random01();
     int randomInt(int minInclusive, int maxInclusive);

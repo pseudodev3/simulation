@@ -41,3 +41,47 @@ jobs:
           ./build/simulation_episode 1337 20 1 build/episode-plan --plan-only
           test -s build/episode-plan/episode.json
           test -s build/episode-plan/timeline.txt
+
+  kokoro-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Kokoro dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "kokoro>=0.9.4" soundfile numpy
+
+      - name: Smoke test Kokoro resident voice
+        run: |
+          python - <<'PY'
+          from kokoro import KPipeline
+          import numpy as np
+          import soundfile as sf
+
+          pipeline = KPipeline(lang_code='a', device='cpu')
+          chunks = [
+              np.asarray(audio, dtype=np.float32)
+              for _, _, audio in pipeline(
+                  'Mason Block voice check.',
+                  voice='af_heart',
+                  speed=0.99,
+              )
+              if audio is not None
+          ]
+          if not chunks:
+              raise RuntimeError('Kokoro returned no smoke-test audio')
+          output = np.concatenate(chunks)
+          if output.size < 1000:
+              raise RuntimeError(f'Kokoro returned suspiciously short audio: {output.size} samples')
+          sf.write('/tmp/mason-voice-check.wav', output, 24000, subtype='PCM_16')
+          print(f'Kokoro OK: {output.size} samples ({output.size / 24000:.2f}s)')
+          PY
+          test -s /tmp/mason-voice-check.wav

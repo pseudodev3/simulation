@@ -104,7 +104,6 @@ def voice_settings(person_id: int) -> tuple[str, float]:
 
 
 def synthesize_line(text: str, person_id: int, destination: Path) -> float:
-    """Generate a resident's deterministic neural voice locally with Kokoro."""
     voice, speed = voice_settings(person_id)
     chunks = []
     for _graphemes, _phonemes, audio in pipeline()(text, voice=voice, speed=speed):
@@ -139,13 +138,36 @@ def mix_final(video: Path, ambient: Path, clips, output: Path) -> None:
     for clip,_ in clips: command.extend(["-i",str(clip)])
     if not clips:
         command.extend(["-map","0:v:0","-map","1:a:0","-c:v","copy","-c:a","aac","-b:a","144k","-shortest","-movflags","+faststart",str(output)]); run(command); return
-    filters=["[1:a]volume=0.70[amb]"]; labels=[]
+
+    # Build speech in small groups instead of feeding every resident clip into one
+    # enormous amix. This avoids FFmpeg's practical complex-filter input limit.
+    filters=["[1:a]volume=0.70[amb]"]
+    delayed=[]
     for index,(_,delay_ms) in enumerate(clips,start=2):
-        label=f"v{index}"; filters.append(f"[{index}:a]adelay={delay_ms}|{delay_ms},volume=1.0[{label}]"); labels.append(f"[{label}]")
-    filters.append("".join(labels)+f"amix=inputs={len(labels)}:duration=longest:normalize=0[speech]")
-    filters.append("[amb][speech]sidechaincompress=threshold=0.025:ratio=4:attack=25:release=420[ducked]")
-    filters.append("[ducked][speech]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.92[mix]")
-    command.extend(["-filter_complex",";".join(filters),"-map","0:v:0","-map","[mix]","-c:v","copy","-c:a","aac","-b:a","160k","-shortest","-movflags","+faststart",str(output)]); run(command)
+        label=f"v{index}"
+        filters.append(f"[{index}:a]adelay={delay_ms}:all=1,volume=1.0[{label}]")
+        delayed.append(label)
+
+    group_labels=[]
+    group_size=16
+    for group_no,start in enumerate(range(0,len(delayed),group_size)):
+        group=delayed[start:start+group_size]
+        out=f"sg{group_no}"
+        filters.append("".join(f"[{label}]" for label in group)+f"amix=inputs={len(group)}:duration=longest:normalize=0[{out}]")
+        group_labels.append(out)
+
+    if len(group_labels)==1:
+        filters.append(f"[{group_labels[0]}]anull[speech]")
+    else:
+        filters.append("".join(f"[{label}]" for label in group_labels)+f"amix=inputs={len(group_labels)}:duration=longest:normalize=0[speech]")
+
+    # Split speech because sidechaincompress consumes its sidechain input; the
+    # second copy is retained for the final audible speech mix.
+    filters.append("[speech]asplit=2[speech_sc][speech_mix]")
+    filters.append("[amb][speech_sc]sidechaincompress=threshold=0.025:ratio=4:attack=25:release=420[ducked]")
+    filters.append("[ducked][speech_mix]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.92[mix]")
+    command.extend(["-filter_complex",";".join(filters),"-map","0:v:0","-map","[mix]","-c:v","copy","-c:a","aac","-b:a","160k","-shortest","-movflags","+faststart",str(output)])
+    run(command)
 
 
 def main() -> int:

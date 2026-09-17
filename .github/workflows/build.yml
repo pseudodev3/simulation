@@ -89,3 +89,74 @@ jobs:
           print(f'Kokoro OK: {output.size} samples ({output.size / 24000:.2f}s)')
           PY
           test -s /tmp/mason-voice-check.wav
+
+  ffmpeg-mixer-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Exercise Mason Block dialogue mixer
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import math
+          import struct
+          import tempfile
+          import wave
+          from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location('mason_audio', 'scripts/postprocess_episode_audio.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+
+          sample_rate = 24000
+          with tempfile.TemporaryDirectory(prefix='mason-mixer-smoke-') as td:
+              root = Path(td)
+
+              def tone(path, seconds, frequency, amplitude):
+                  frames = int(seconds * sample_rate)
+                  with wave.open(str(path), 'wb') as wav:
+                      wav.setnchannels(1)
+                      wav.setsampwidth(2)
+                      wav.setframerate(sample_rate)
+                      data = bytearray()
+                      for i in range(frames):
+                          sample = amplitude * math.sin(2.0 * math.pi * frequency * i / sample_rate)
+                          data.extend(struct.pack('<h', int(sample * 32767)))
+                      wav.writeframes(data)
+
+              ambient = root / 'ambient.wav'
+              tone(ambient, 8.0, 110.0, 0.03)
+
+              clips = []
+              # More than one 16-input group, so both hierarchical amix stages
+              # and the speech sidechain split are exercised.
+              for i in range(34):
+                  clip = root / f'voice_{i:02d}.wav'
+                  tone(clip, 0.22 + (i % 3) * 0.03, 180.0 + i * 9.0, 0.10)
+                  clips.append((clip, 100 + i * 170))
+
+              video = root / 'silent.mp4'
+              module.run([
+                  'ffmpeg', '-y', '-loglevel', 'error',
+                  '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=24:d=8',
+                  '-c:v', 'libx264', '-pix_fmt', 'yuv420p', video.as_posix(),
+              ])
+
+              output = root / 'mixed.mp4'
+              module.mix_final(video, ambient, clips, output)
+              if not output.exists() or output.stat().st_size < 1000:
+                  raise RuntimeError('Mixer did not produce a valid output file')
+              module.run([
+                  'ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                  '-show_entries', 'stream=codec_name,sample_rate',
+                  '-of', 'default=nw=1', output.as_posix(),
+              ])
+              print(f'Mason Block FFmpeg mixer OK: {output.stat().st_size} bytes, {len(clips)} dialogue clips')
+          PY

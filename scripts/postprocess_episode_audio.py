@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Build the final Mason Block soundtrack.
-
-The C++ renderer emits a silent picture track. This pass adds two things only:
-
-1. a restrained neighborhood ambience built from filtered noise and distant traffic
-2. short neural resident dialogue for directed two-person scenes
-
-There are deliberately no exposed sine-wave birds, crickets or fake oscillator voices.
-Spoken lines use edge-tts so the result is closer to natural overheard conversation.
-Each resident keeps a stable voice identity by person ID.
-"""
+"""Build the final Mason Block soundtrack with local neural resident voices."""
 
 from __future__ import annotations
 
@@ -21,15 +11,19 @@ import struct
 import subprocess
 import sys
 import tempfile
-import time
 import wave
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+from kokoro import KPipeline
+
 SAMPLE_RATE = 24_000
 VOICE_POOL = [
-    "en-US-AvaNeural", "en-US-AndrewNeural", "en-US-EmmaNeural",
-    "en-US-BrianNeural", "en-US-JennyNeural", "en-US-GuyNeural",
+    "af_heart", "am_adam", "af_bella", "am_michael",
+    "af_sarah", "am_echo", "af_nicole", "am_eric",
 ]
+_PIPELINE = None
 
 
 def run(command: list[str]) -> None:
@@ -95,42 +89,36 @@ def write_ambient(path: Path, duration: float, seed: int, segments: list[dict]) 
         if chunk: wav.writeframesraw(chunk)
 
 
-def voice_settings(person_id: int) -> tuple[str, str, str]:
-    index = abs(person_id) % len(VOICE_POOL)
-    rate_values = ["-8%", "-5%", "-2%", "+1%", "+3%"]
-    pitch_values = ["-3Hz", "-1Hz", "+0Hz", "+1Hz", "+2Hz"]
-    return VOICE_POOL[index], rate_values[(abs(person_id)*7)%len(rate_values)], pitch_values[(abs(person_id)*11)%len(pitch_values)]
+def pipeline():
+    global _PIPELINE
+    if _PIPELINE is None:
+        _PIPELINE = KPipeline(lang_code="a", device="cpu")
+    return _PIPELINE
+
+
+def voice_settings(person_id: int) -> tuple[str, float]:
+    pid = abs(person_id)
+    voice = VOICE_POOL[pid % len(VOICE_POOL)]
+    speeds = [0.92, 0.96, 0.99, 1.02, 1.05]
+    return voice, speeds[(pid * 7) % len(speeds)]
 
 
 def synthesize_line(text: str, person_id: int, destination: Path) -> float:
-    """Synthesize the requested original neural voice, retrying transient service failures.
-
-    There is intentionally no substitute/silent voice fallback: either Edge returns the
-    resident's configured neural voice or this function ultimately fails the workflow.
-    """
-    voice, rate, pitch = voice_settings(person_id)
-    raw_mp3 = destination.with_suffix(".edge.mp3")
-    attempts = 8
-    last_error = None
-    for attempt in range(1, attempts + 1):
-        raw_mp3.unlink(missing_ok=True)
-        try:
-            subprocess.run(["edge-tts", "--voice", voice, f"--rate={rate}", f"--pitch={pitch}", "--volume=-6%", "--text", text, "--write-media", str(raw_mp3)], check=True, timeout=90)
-            if not raw_mp3.exists() or raw_mp3.stat().st_size < 256:
-                raise RuntimeError("edge-tts returned no usable audio")
-            break
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as exc:
-            last_error = exc
-            if attempt == attempts:
-                raise RuntimeError(f"edge-tts failed after {attempts} attempts for resident {person_id} using {voice}") from exc
-            # No request storm: transient NoAudioReceived/socket failures get progressively
-            # longer recovery windows before we ask for the exact same voice again.
-            delay = min(45.0, 2.0 ** attempt) + random.random()
-            print(f"edge-tts attempt {attempt}/{attempts} failed; retrying same voice in {delay:.1f}s", file=sys.stderr)
-            time.sleep(delay)
-    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw_mp3), "-af", "highpass=f=85,lowpass=f=7800,acompressor=threshold=0.10:ratio=2.2:attack=12:release=180,volume=0.92", "-ar", str(SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", str(destination)])
-    raw_mp3.unlink(missing_ok=True)
-    with wave.open(str(destination), "rb") as wav: return wav.getnframes()/float(wav.getframerate())
+    """Generate a resident's deterministic neural voice locally with Kokoro."""
+    voice, speed = voice_settings(person_id)
+    chunks = []
+    for _graphemes, _phonemes, audio in pipeline()(text, voice=voice, speed=speed):
+        if audio is not None:
+            chunks.append(np.asarray(audio, dtype=np.float32))
+    if not chunks:
+        raise RuntimeError(f"Kokoro returned no audio for resident {person_id} using {voice}")
+    audio = np.concatenate(chunks)
+    raw = destination.with_suffix(".kokoro.wav")
+    sf.write(raw, audio, SAMPLE_RATE, subtype="PCM_16")
+    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-af", "highpass=f=85,lowpass=f=7800,acompressor=threshold=0.10:ratio=2.2:attack=12:release=180,volume=0.92", "-ar", str(SAMPLE_RATE), "-ac", "1", "-c:a", "pcm_s16le", str(destination)])
+    raw.unlink(missing_ok=True)
+    with wave.open(str(destination), "rb") as wav:
+        return wav.getnframes() / float(wav.getframerate())
 
 
 def build_dialogue_clips(segments: list[dict], temp: Path, duration: float):
@@ -164,11 +152,10 @@ def main() -> int:
     if len(sys.argv)!=4: print("usage: postprocess_episode_audio.py episode.json silent.mp4 final.mp4",file=sys.stderr); return 2
     plan_path=Path(sys.argv[1]); video_path=Path(sys.argv[2]); output_path=Path(sys.argv[3]); plan=json.loads(plan_path.read_text()); segments=build_segments(plan); duration=video_duration(video_path); seed=int(plan.get("seed",0))
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None: raise RuntimeError("ffmpeg/ffprobe are required for episode audio")
-    if shutil.which("edge-tts") is None: raise RuntimeError("edge-tts is required for natural resident voices")
     output_path.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="mason-audio-") as temp_name:
         temp=Path(temp_name); ambient=temp/"neighborhood-ambience.wav"; write_ambient(ambient,duration,seed,segments); clips,transcript=build_dialogue_clips(segments,temp,duration); mix_final(video_path,ambient,clips,output_path)
-    (output_path.parent/"dialogue-transcript.txt").write_text("MASON BLOCK DIALOGUE TRACK\nNaturalistic overheard resident dialogue generated with neural TTS.\nVoice identity is deterministic by resident ID.\n\n"+("\n".join(transcript) if transcript else "No directed conversations occurred in this run.\n")+"\n")
+    (output_path.parent/"dialogue-transcript.txt").write_text("MASON BLOCK DIALOGUE TRACK\nNaturalistic overheard resident dialogue generated locally with Kokoro neural TTS.\nVoice identity is deterministic by resident ID.\n\n"+("\n".join(transcript) if transcript else "No directed conversations occurred in this run.\n")+"\n")
     print(f"final soundtrack: {output_path}"); print(f"spoken lines: {len(clips)}"); return 0
 
 if __name__ == "__main__": raise SystemExit(main())

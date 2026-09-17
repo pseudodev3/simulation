@@ -71,6 +71,20 @@ jobs:
           .venv/bin/pip install --disable-pip-version-check edge-tts
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
+      - name: Smoke test resident voice synthesis
+        run: |
+          .venv/bin/edge-tts \
+            --voice en-US-AvaNeural \
+            --rate=-2% \
+            --pitch=-1Hz \
+            --volume=-6% \
+            --text "Mason Block voice check." \
+            --write-media /tmp/mason-voice-check.mp3
+          test -s /tmp/mason-voice-check.mp3
+          ffprobe -v error -select_streams a:0 \
+            -show_entries stream=codec_name,duration \
+            -of default=nw=1 /tmp/mason-voice-check.mp3
+
       - name: Configure
         run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON -DCMAKE_BUILD_TYPE=Release
 

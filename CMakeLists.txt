@@ -41,7 +41,7 @@ if (SIMULATION_BUILD_VIEWER)
 
     add_executable(simulation_episode
         src/episode_main.cpp
-        src/EpisodeRenderer.cpp
+        src/EpisodeRendererV2.cpp
     )
     target_link_libraries(simulation_episode PRIVATE simulation_core raylib)
     target_include_directories(simulation_episode PRIVATE include)

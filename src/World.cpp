@@ -4,480 +4,105 @@
 #include <array>
 #include <cmath>
 #include <iomanip>
+#include <set>
 #include <sstream>
-#include <unordered_map>
 
 namespace sim {
 namespace {
-
-float clamp100(float value) {
-    return std::clamp(value, 0.0f, 100.0f);
+float clamp100(float v) { return std::clamp(v, 0.0f, 100.0f); }
+int absoluteMinute(int day, int minute) { return (day - 1) * 1440 + minute; }
 }
-
-} // namespace
 
 World::World(std::uint32_t seed, int population)
     : seed_(seed), rng_(seed), population_(std::max(1, population)) {
-    buildNeighborhood();
-    spawnCitizens();
-    seedHouseholdRelationships();
+    buildNeighborhood(); spawnCitizens(); seedHouseholdRelationships();
     emit(-1, "world", "Neighborhood simulation started", 0.2f);
 }
 
 void World::buildNeighborhood() {
     int nextId = 0;
-
-    // Mason Block is arranged around one horizontal and one vertical street.
-    // Building centers deliberately stay clear of the road/sidewalk footprint.
-    static constexpr std::array<Vec2, 12> homes = {
-        Vec2{52.0f, 52.0f}, Vec2{122.0f, 52.0f}, Vec2{192.0f, 52.0f}, Vec2{262.0f, 52.0f},
-        Vec2{52.0f, 126.0f}, Vec2{122.0f, 126.0f}, Vec2{192.0f, 126.0f}, Vec2{262.0f, 126.0f},
-        Vec2{52.0f, 286.0f}, Vec2{122.0f, 286.0f}, Vec2{192.0f, 286.0f}, Vec2{262.0f, 286.0f}
-    };
-
-    for (int i = 0; i < static_cast<int>(homes.size()); ++i) {
-        places_.push_back(Place{nextId, "Apartment " + std::to_string(i + 1), PlaceType::Home, homes[static_cast<std::size_t>(i)], 6});
-        homeIds_.push_back(nextId++);
-    }
-
-    static constexpr std::array<Vec2, 5> jobPositions = {
-        Vec2{410.0f, 55.0f}, Vec2{500.0f, 55.0f}, Vec2{590.0f, 55.0f},
-        Vec2{410.0f, 132.0f}, Vec2{500.0f, 132.0f}
-    };
-    const std::array<std::string, 5> jobs = {
-        "Mason Garage", "Corner Market", "Riverside Diner", "Briar Office", "North Warehouse"
-    };
-
-    for (int i = 0; i < static_cast<int>(jobs.size()); ++i) {
-        places_.push_back(Place{nextId, jobs[static_cast<std::size_t>(i)], PlaceType::Workplace,
-                                jobPositions[static_cast<std::size_t>(i)], 20});
-        workplaceIds_.push_back(nextId++);
-    }
-
-    cafeId_ = nextId;
-    places_.push_back(Place{nextId++, "Blue Cup Cafe", PlaceType::Cafe, {410.0f, 286.0f}, 24});
-
-    shopId_ = nextId;
-    places_.push_back(Place{nextId++, "Mason Convenience", PlaceType::Shop, {500.0f, 286.0f}, 18});
-
-    parkId_ = nextId;
-    places_.push_back(Place{nextId++, "Willow Park", PlaceType::Park, {590.0f, 300.0f}, 40});
+    static constexpr std::array<Vec2,12> homes = {Vec2{52,52},Vec2{122,52},Vec2{192,52},Vec2{262,52},Vec2{52,126},Vec2{122,126},Vec2{192,126},Vec2{262,126},Vec2{52,286},Vec2{122,286},Vec2{192,286},Vec2{262,286}};
+    for (int i=0;i<(int)homes.size();++i) { places_.push_back(Place{nextId,"Apartment "+std::to_string(i+1),PlaceType::Home,homes[(size_t)i],6}); homeIds_.push_back(nextId++); }
+    static constexpr std::array<Vec2,5> jobs = {Vec2{410,55},Vec2{500,55},Vec2{590,55},Vec2{410,132},Vec2{500,132}};
+    const std::array<std::string,5> names={"Mason Garage","Corner Market","Riverside Diner","Briar Office","North Warehouse"};
+    for(int i=0;i<5;++i){places_.push_back(Place{nextId,names[(size_t)i],PlaceType::Workplace,jobs[(size_t)i],20});workplaceIds_.push_back(nextId++);}
+    cafeId_=nextId; places_.push_back(Place{nextId++,"Blue Cup Cafe",PlaceType::Cafe,{410,286},24});
+    shopId_=nextId; places_.push_back(Place{nextId++,"Mason Convenience",PlaceType::Shop,{500,286},18});
+    parkId_=nextId; places_.push_back(Place{nextId++,"Willow Park",PlaceType::Park,{590,300},40});
 }
 
 void World::spawnCitizens() {
-    static const std::array<std::string, 24> firstNames = {
-        "Marcus", "Maya", "Daniel", "Nora", "Eli", "Sarah", "Jonah", "Lena",
-        "Andre", "Tara", "Miles", "Rosa", "Noah", "Iris", "Caleb", "Jade",
-        "Victor", "Amara", "Theo", "Naomi", "Isaac", "Mina", "Owen", "Leah"
-    };
-
-    static const std::array<std::string, 24> lastNames = {
-        "Reed", "Cole", "Parker", "Brooks", "Hayes", "Kim", "Ortiz", "Stone",
-        "Bennett", "Price", "Ward", "Foster", "Diaz", "Grant", "Turner", "Ross",
-        "Morgan", "Bell", "Morris", "Bailey", "Gray", "Cooper", "Rivera", "James"
-    };
-
-    citizens_.reserve(population_);
-
-    for (int i = 0; i < population_; ++i) {
-        Person person;
-        person.id = i;
-        person.name = firstNames[static_cast<std::size_t>(randomInt(0, static_cast<int>(firstNames.size()) - 1))]
-                    + " "
-                    + lastNames[static_cast<std::size_t>(randomInt(0, static_cast<int>(lastNames.size()) - 1))];
-        person.age = randomInt(19, 61);
-        person.homeId = homeIds_[static_cast<std::size_t>(randomInt(0, static_cast<int>(homeIds_.size()) - 1))];
-        person.workplaceId = workplaceIds_[static_cast<std::size_t>(randomInt(0, static_cast<int>(workplaceIds_.size()) - 1))];
-        person.currentPlaceId = person.homeId;
-
-        person.traits = Traits{random01(), random01(), random01(), random01(), random01()};
-        person.cash = 80.0f + random01() * 270.0f;
-        person.hunger = 5.0f + random01() * 22.0f;
-        person.energy = 70.0f + random01() * 28.0f;
-        person.stress = 5.0f + random01() * 28.0f;
-        person.loneliness = 10.0f + random01() * 35.0f;
-        person.jobSatisfaction = 35.0f + random01() * 55.0f;
-
-        person.shiftStart = 7 * 60 + 30 + randomInt(0, 3) * 30;
-        person.shiftEnd = person.shiftStart + 8 * 60;
-        person.dailyWage = 65.0f + random01() * 55.0f;
-        person.housingCostPerDay = 10.0f + random01() * 12.0f;
-
-        citizens_.push_back(std::move(person));
+    static const std::array<std::string,24> first={"Marcus","Maya","Daniel","Nora","Eli","Sarah","Jonah","Lena","Andre","Tara","Miles","Rosa","Noah","Iris","Caleb","Jade","Victor","Amara","Theo","Naomi","Isaac","Mina","Owen","Leah"};
+    static const std::array<std::string,24> last={"Reed","Cole","Parker","Brooks","Hayes","Kim","Ortiz","Stone","Bennett","Price","Ward","Foster","Diaz","Grant","Turner","Ross","Morgan","Bell","Morris","Bailey","Gray","Cooper","Rivera","James"};
+    std::set<std::string> used;
+    citizens_.reserve((size_t)population_);
+    for(int i=0;i<population_;++i){
+        Person p; p.id=i;
+        do { p.name=first[(size_t)randomInt(0,23)]+" "+last[(size_t)randomInt(0,23)]; } while(!used.insert(p.name).second);
+        p.age=randomInt(19,61); p.homeId=homeIds_[(size_t)randomInt(0,(int)homeIds_.size()-1)]; p.workplaceId=workplaceIds_[(size_t)randomInt(0,(int)workplaceIds_.size()-1)]; p.currentPlaceId=p.homeId;
+        p.traits=Traits{random01(),random01(),random01(),random01(),random01()};
+        p.behavior=BehaviorSignature{0.85f+random01()*0.35f,random01(),std::clamp((p.traits.sociability+random01())*.5f,0.f,1.f),std::clamp((p.traits.impulsiveness+random01())*.5f,0.f,1.f),random01()};
+        p.cash=80+random01()*270; p.hunger=5+random01()*22; p.energy=70+random01()*28; p.stress=5+random01()*28; p.loneliness=10+random01()*35; p.jobSatisfaction=35+random01()*55;
+        p.shiftStart=450+randomInt(0,3)*30; p.shiftEnd=p.shiftStart+480; p.dailyWage=65+random01()*55; p.housingCostPerDay=10+random01()*12;
+        citizens_.push_back(std::move(p));
     }
 }
 
-void World::seedHouseholdRelationships() {
-    for (std::size_t i = 0; i < citizens_.size(); ++i) {
-        for (std::size_t j = i + 1; j < citizens_.size(); ++j) {
-            if (citizens_[i].homeId != citizens_[j].homeId) continue;
+void World::seedHouseholdRelationships(){for(size_t i=0;i<citizens_.size();++i)for(size_t j=i+1;j<citizens_.size();++j)if(citizens_[i].homeId==citizens_[j].homeId){auto&a=ensureRelationship(citizens_[i],citizens_[j].id);auto&b=ensureRelationship(citizens_[j],citizens_[i].id);float f=45+random01()*25,aff=25+random01()*45;a.familiarity=b.familiarity=f;a.affinity=b.affinity=aff;a.trust=b.trust=20+random01()*35;}}
 
-            auto& a = ensureRelationship(citizens_[i], citizens_[j].id);
-            auto& b = ensureRelationship(citizens_[j], citizens_[i].id);
-            const float affinity = 25.0f + random01() * 45.0f;
-            a.familiarity = b.familiarity = 55.0f;
-            a.affinity = b.affinity = affinity;
-        }
-    }
+void World::step(int minutes){
+    int dt=std::max(1,minutes); if(minute_==0)for(auto&c:citizens_)c.paidToday=false;
+    for(auto&c:citizens_)updateCitizen(c,dt);
+    updatePerception(); advanceInteractions(); handleInteractions();
+    minute_+=dt; while(minute_>=1440){minute_-=1440;++day_;}
+}
+void World::runDays(int days,int dt){int total=std::max(0,days)*1440;dt=std::max(1,dt);for(int e=0;e<total;e+=dt)step(std::min(dt,total-e));}
+
+void World::applyNeeds(Person&p,int dt){float h=dt/60.f;if(p.activity==Activity::Sleeping){p.energy+=16*h;p.hunger+=2*h;p.stress-=6*h;}else{p.energy-=(p.activity==Activity::Working?6:p.activity==Activity::Commuting?5:4)*h;p.hunger+=6.5f*h;if(p.activity==Activity::Working){p.stress+=(2+(100-p.jobSatisfaction)/100*5)*h;p.loneliness+=.6f*h;}else if(p.activity==Activity::Relaxing||p.activity==Activity::Socializing){p.stress-=4*h;}else p.stress-=.6f*h;}if(p.hunger>80)p.stress+=2*h;if(p.energy<20)p.stress+=2*h;p.energy=clamp100(p.energy);p.hunger=clamp100(p.hunger);p.stress=clamp100(p.stress);p.loneliness=clamp100(p.loneliness);}
+
+void World::updateCitizen(Person&p,int dt){applyNeeds(p,dt);handleEconomy(p);if(p.activity==Activity::Commuting){updateTravel(p,dt);return;}if(p.activeInteractionId>=0)return;updateIntent(p);applyIntent(p);}
+
+bool World::shouldInterruptIntent(const Person&p)const{if(p.intent.kind==IntentKind::None)return true;int now=absoluteMinute(day_,minute_);if(now>=p.intent.commitUntilMinute)return true;if(p.energy<12&&p.intent.kind!=IntentKind::Sleep)return true;if(p.hunger>88&&p.intent.kind!=IntentKind::Eat)return true;int travel=estimateTravelMinutes(p.currentPlaceId,p.workplaceId);if(minute_>=p.shiftStart-travel-10&&minute_<p.shiftEnd&&p.intent.kind!=IntentKind::Work)return true;return false;}
+
+int World::chooseSocialTarget(const Person&p)const{int best=-1;float score=-1;for(int id:p.visiblePeople){auto*o=personById(id);if(!o||o->activeInteractionId>=0)continue;auto*r=findRelationship(p,id);float s=(r?r->affinity*.5f+r->familiarity*.25f:8.f)+p.loneliness*.25f;if(s>score){score=s;best=id;}}return best;}
+
+void World::updateIntent(Person&p){
+    if(!shouldInterruptIntent(p))return;
+    Intent next; next.createdDay=day_;next.createdMinute=minute_;int now=absoluteMinute(day_,minute_);
+    auto set=[&](IntentKind k,int place,int person,float utility,int duration){if(utility>next.utility){next.kind=k;next.targetPlaceId=place;next.targetPersonId=person;next.utility=utility;next.commitUntilMinute=now+duration;}};
+    if(minute_<360||minute_>=1380)set(IntentKind::Sleep,p.homeId,-1,95+(100-p.energy),60);
+    int commute=estimateTravelMinutes(p.currentPlaceId,p.workplaceId); if(minute_>=p.shiftStart-commute-15&&minute_<p.shiftEnd)set(IntentKind::Work,p.workplaceId,-1,110,45);
+    set(IntentKind::Eat,p.cash>=8?cafeId_:p.homeId,-1,p.hunger,35);
+    set(IntentKind::ReturnHome,p.homeId,-1,(100-p.energy)*.55f+(minute_>1200?35:0),50);
+    set(IntentKind::Relax,parkId_,-1,p.stress*.72f,45);
+    if(p.cash>=12)set(IntentKind::Shop,shopId_,-1,p.hunger*.35f+18,30);
+    int target=chooseSocialTarget(p); if(target>=0)set(IntentKind::Socialize,p.currentPlaceId,target,p.loneliness*.65f+p.behavior.talkativeness*30,25);
+    if(minute_>p.shiftEnd&&minute_<1200&&p.behavior.spontaneity>.45f)set(IntentKind::Wander,parkId_,-1,24+p.behavior.spontaneity*22,35);
+    if(next.kind==IntentKind::None)set(IntentKind::StayHome,p.homeId,-1,10,40);
+    if(next.kind!=p.intent.kind||next.targetPlaceId!=p.intent.targetPlaceId){emit(p.id,"intent",p.name+" formed a new plan",.08f);}
+    p.intent=next;
 }
 
-void World::step(int minutes) {
-    const int stepMinutes = std::max(1, minutes);
+void World::applyIntent(Person&p){switch(p.intent.kind){case IntentKind::Sleep:moveTo(p,p.homeId,Activity::Sleeping);break;case IntentKind::StayHome:case IntentKind::ReturnHome:moveTo(p,p.homeId,Activity::AtHome);break;case IntentKind::Work:moveTo(p,p.workplaceId,Activity::Working);break;case IntentKind::Eat:moveTo(p,p.intent.targetPlaceId,Activity::Eating);break;case IntentKind::Shop:moveTo(p,shopId_,Activity::Shopping);break;case IntentKind::Relax:moveTo(p,parkId_,Activity::Relaxing);break;case IntentKind::Wander:moveTo(p,parkId_,Activity::Wandering);break;case IntentKind::Socialize:p.activity=Activity::Socializing;break;case IntentKind::Visit:case IntentKind::None:break;}}
+void World::updateRoutine(Person&p){updateIntent(p);applyIntent(p);}
 
-    if (minute_ == 0) {
-        for (auto& citizen : citizens_) citizen.paidToday = false;
-    }
+void World::updateTravel(Person&p,int dt){if(p.activity!=Activity::Commuting||p.destinationPlaceId<0)return;p.travelMinutesRemaining=std::max(0,p.travelMinutesRemaining-dt);if(p.travelMinutesRemaining)return;p.currentPlaceId=p.destinationPlaceId;p.activity=p.destinationActivity;p.originPlaceId=-1;p.destinationPlaceId=-1;p.travelMinutesTotal=p.travelMinutesRemaining=0;emit(p.id,"arrival",p.name+" arrived",.06f);}
 
-    for (auto& citizen : citizens_) {
-        applyNeeds(citizen, stepMinutes);
-        handleEconomy(citizen);
+void World::updatePerception(){for(auto&c:citizens_)c.visiblePeople.clear();for(size_t i=0;i<citizens_.size();++i)for(size_t j=i+1;j<citizens_.size();++j){auto&a=citizens_[i];auto&b=citizens_[j];if(a.currentPlaceId>=0&&a.currentPlaceId==b.currentPlaceId&&a.activity!=Activity::Sleeping&&b.activity!=Activity::Sleeping){a.visiblePeople.push_back(b.id);b.visiblePeople.push_back(a.id);}}}
 
-        if (citizen.activity == Activity::Commuting) {
-            updateTravel(citizen, stepMinutes);
-            if (citizen.activity == Activity::Commuting) continue;
-        }
+void World::handleInteractions(){int now=absoluteMinute(day_,minute_);for(auto&a:citizens_){if(a.activeInteractionId>=0||now<a.interactionCooldownUntil||a.activity==Activity::Working||a.activity==Activity::Sleeping||a.activity==Activity::Commuting)continue;int target=chooseSocialTarget(a);auto*b=personById(target);if(!b||b->activeInteractionId>=0||now<b->interactionCooldownUntil)continue;float chance=.015f+.05f*a.traits.sociability+.035f*a.behavior.talkativeness;if(a.intent.kind==IntentKind::Socialize)chance+=.18f;if(random01()>chance)continue;Interaction x;x.id=nextInteractionId_++;x.participants={a.id,b->id};x.initiatorId=a.id;x.placeId=a.currentPlaceId;x.phase=InteractionPhase::Notice;x.startedDay=day_;x.startedMinute=minute_;x.phaseMinute=now;interactions_.push_back(x);a.activeInteractionId=b->activeInteractionId=x.id;emit(a.id,"interaction_start",a.name+" noticed "+b->name,.18f,b->id);}}
 
-        updateRoutine(citizen);
-    }
+void World::advanceInteractions(){int now=absoluteMinute(day_,minute_);for(auto&x:interactions_){if(x.phase==InteractionPhase::None||x.phase==InteractionPhase::Disengage)continue;int age=now-x.phaseMinute;if(x.phase==InteractionPhase::Notice&&age>=2){x.phase=InteractionPhase::Approach;x.phaseMinute=now;}else if(x.phase==InteractionPhase::Approach&&age>=2){x.phase=InteractionPhase::Engage;x.phaseMinute=now;emit(x.initiatorId,"conversation","A conversation began",.22f,x.participants.size()>1?x.participants[1]:-1);}else if(x.phase==InteractionPhase::Engage&&age>=8){x.phase=InteractionPhase::Disengage;x.phaseMinute=now;if(x.participants.size()>=2){auto*a=personById(x.participants[0]);auto*b=personById(x.participants[1]);if(a&&b){auto&ab=ensureRelationship(*a,b->id);auto&ba=ensureRelationship(*b,a->id);float delta=1.5f+(a->traits.kindness+b->traits.kindness)*1.5f;ab.familiarity=ba.familiarity=clamp100(std::max(ab.familiarity,ba.familiarity)+delta);ab.affinity=ba.affinity=clamp100((ab.affinity+ba.affinity)*.5f+(random01()-.35f)*2);ab.trust=ba.trust=clamp100((ab.trust+ba.trust)*.5f+.8f);ab.lastSeenDay=ba.lastSeenDay=day_;ab.lastSeenMinute=ba.lastSeenMinute=minute_;ab.lastNotableInteractionDay=ba.lastNotableInteractionDay=day_;++ab.interactionCount;++ba.interactionCount;a->loneliness=clamp100(a->loneliness-10);b->loneliness=clamp100(b->loneliness-10);remember(*a,"conversation",b->id,.35f);remember(*b,"conversation",a->id,.35f);a->activeInteractionId=b->activeInteractionId=-1;a->interactionCooldownUntil=b->interactionCooldownUntil=now+35;emit(a->id,"interaction_end",a->name+" and "+b->name+" finished talking",.2f,b->id);}}}}}
 
-    handleInteractions();
+void World::handleEconomy(Person&p){if(minute_>=p.shiftEnd&&!p.paidToday&&p.activity!=Activity::Working){p.cash+=p.dailyWage;p.paidToday=true;emit(p.id,"income",p.name+" finished a shift and was paid",.12f);}if(minute_>=1260&&minute_<1270&&p.lastPurchaseDay!=day_&&p.cash<p.housingCostPerDay){p.stress=clamp100(p.stress+10);remember(p,"money_pressure",-1,.55f);}}
+int World::chooseEveningPlace(Person&p){if(p.energy<25)return p.homeId;if(p.stress>68)return parkId_;if(p.loneliness>58&&p.cash>=6)return cafeId_;if(p.hunger>62&&p.cash>=12)return shopId_;return random01()<p.traits.sociability*.4f?cafeId_:parkId_;}
 
-    minute_ += stepMinutes;
-    while (minute_ >= 24 * 60) {
-        minute_ -= 24 * 60;
-        ++day_;
-    }
-}
-
-void World::runDays(int days, int minutesPerStep) {
-    const int totalMinutes = std::max(0, days) * 24 * 60;
-    const int stepMinutes = std::max(1, minutesPerStep);
-    for (int elapsed = 0; elapsed < totalMinutes; elapsed += stepMinutes) step(stepMinutes);
-}
-
-void World::applyNeeds(Person& person, int stepMinutes) {
-    const float hours = static_cast<float>(stepMinutes) / 60.0f;
-
-    if (person.activity == Activity::Sleeping) {
-        person.energy += 16.0f * hours;
-        person.hunger += 2.0f * hours;
-        person.stress -= 6.0f * hours;
-    } else {
-        const float energyRate = person.activity == Activity::Working ? 6.0f
-                               : person.activity == Activity::Commuting ? 5.0f : 4.0f;
-        person.energy -= energyRate * hours;
-        person.hunger += 6.5f * hours;
-
-        if (person.activity == Activity::Working) {
-            const float dissatisfaction = (100.0f - person.jobSatisfaction) / 100.0f;
-            person.stress += (2.0f + dissatisfaction * 5.0f) * hours;
-            person.loneliness += 0.6f * hours;
-        } else if (person.activity == Activity::Commuting) {
-            person.stress += 0.8f * hours;
-        } else if (person.activity == Activity::Relaxing || person.activity == Activity::Socializing) {
-            person.stress -= 4.0f * hours;
-        } else {
-            person.stress -= 0.6f * hours;
-        }
-    }
-
-    if (person.hunger > 80.0f) person.stress += 2.0f * hours;
-    if (person.energy < 20.0f) person.stress += 2.0f * hours;
-
-    person.energy = clamp100(person.energy);
-    person.hunger = clamp100(person.hunger);
-    person.stress = clamp100(person.stress);
-    person.loneliness = clamp100(person.loneliness);
-}
-
-void World::updateCitizen(Person& person, int stepMinutes) {
-    applyNeeds(person, stepMinutes);
-    handleEconomy(person);
-    if (person.activity == Activity::Commuting) updateTravel(person, stepMinutes);
-    if (person.activity != Activity::Commuting) updateRoutine(person);
-}
-
-void World::updateTravel(Person& person, int stepMinutes) {
-    if (person.activity != Activity::Commuting || person.destinationPlaceId < 0) return;
-
-    person.travelMinutesRemaining = std::max(0, person.travelMinutesRemaining - stepMinutes);
-    if (person.travelMinutesRemaining > 0) return;
-
-    person.currentPlaceId = person.destinationPlaceId;
-    person.activity = person.destinationActivity;
-    person.originPlaceId = -1;
-    person.destinationPlaceId = -1;
-    person.travelMinutesTotal = 0;
-    person.travelMinutesRemaining = 0;
-}
-
-void World::updateRoutine(Person& person) {
-    if (person.activity == Activity::Commuting) return;
-
-    if (minute_ < 6 * 60) {
-        moveTo(person, person.homeId, Activity::Sleeping);
-        return;
-    }
-
-    const int commuteToWork = estimateTravelMinutes(person.homeId, person.workplaceId);
-    const int leaveForWork = std::max(6 * 60, person.shiftStart - commuteToWork);
-    if (minute_ < leaveForWork) {
-        moveTo(person, person.homeId, Activity::AtHome);
-        return;
-    }
-
-    const bool lunchWindow = minute_ >= 12 * 60 && minute_ < 12 * 60 + 40;
-    if (minute_ < person.shiftEnd) {
-        if (lunchWindow && person.hunger > 48.0f && person.cash >= 8.0f) {
-            moveTo(person, cafeId_, Activity::Eating);
-            if (person.currentPlaceId == cafeId_ && person.lastCafeDay != day_) {
-                person.cash -= 8.0f;
-                person.hunger = std::max(0.0f, person.hunger - 38.0f);
-                person.lastCafeDay = day_;
-                emit(person.id, "purchase", person.name + " bought lunch at Blue Cup Cafe", 0.08f);
-            }
-        } else {
-            moveTo(person, person.workplaceId, Activity::Working);
-        }
-        return;
-    }
-
-    if (minute_ < 20 * 60) {
-        if (person.eveningPlanDay != day_) {
-            person.eveningPlaceId = chooseEveningPlace(person);
-            person.eveningPlanDay = day_;
-        }
-
-        if (person.eveningPlaceId == parkId_) {
-            moveTo(person, parkId_, Activity::Relaxing);
-        } else if (person.eveningPlaceId == cafeId_) {
-            moveTo(person, cafeId_, Activity::Socializing);
-            if (person.currentPlaceId == cafeId_ && person.lastCafeDay != day_ && person.cash >= 6.0f) {
-                person.cash -= 6.0f;
-                person.hunger = std::max(0.0f, person.hunger - 20.0f);
-                person.loneliness = std::max(0.0f, person.loneliness - 12.0f);
-                person.lastCafeDay = day_;
-            }
-        } else if (person.eveningPlaceId == shopId_) {
-            moveTo(person, shopId_, Activity::Shopping);
-            if (person.currentPlaceId == shopId_ && person.lastPurchaseDay != day_ && person.cash >= 12.0f) {
-                const float spend = 12.0f + random01() * 18.0f;
-                person.cash = std::max(0.0f, person.cash - spend);
-                person.hunger = std::max(0.0f, person.hunger - 15.0f);
-                person.lastPurchaseDay = day_;
-                emit(person.id, "purchase", person.name + " stopped at Mason Convenience", 0.06f);
-            }
-        } else {
-            moveTo(person, person.homeId, Activity::AtHome);
-        }
-        return;
-    }
-
-    moveTo(person, person.homeId, minute_ >= 23 * 60 ? Activity::Sleeping : Activity::AtHome);
-}
-
-void World::handleEconomy(Person& person) {
-    if (minute_ == person.shiftEnd && !person.paidToday) {
-        person.cash += person.dailyWage;
-        person.paidToday = true;
-        emit(person.id, "income", person.name + " finished a shift and was paid", 0.12f);
-    }
-
-    if (minute_ == 21 * 60) {
-        if (person.cash >= person.housingCostPerDay) {
-            person.cash -= person.housingCostPerDay;
-        } else {
-            person.stress = clamp100(person.stress + 10.0f);
-            person.memories.push_back(Memory{day_, minute_, "money_pressure", -1, 0.55f});
-            emit(person.id, "money_pressure", person.name + " could not fully cover today's living costs", 0.55f);
-        }
-    }
-}
-
-int World::chooseEveningPlace(Person& person) {
-    if (person.energy < 25.0f) return person.homeId;
-    if (person.stress > 68.0f) return parkId_;
-    if (person.loneliness > 58.0f && person.cash >= 6.0f) return cafeId_;
-    if (person.hunger > 62.0f && person.cash >= 12.0f) return shopId_;
-
-    const float roll = random01();
-    const float socialBias = person.traits.sociability * 0.30f;
-    if (roll < 0.18f + socialBias && person.cash >= 6.0f) return cafeId_;
-    if (roll < 0.45f) return parkId_;
-    if (roll < 0.60f && person.cash >= 12.0f) return shopId_;
-    return person.homeId;
-}
-
-void World::handleInteractions() {
-    for (std::size_t i = 0; i < citizens_.size(); ++i) {
-        for (std::size_t j = i + 1; j < citizens_.size(); ++j) {
-            auto& a = citizens_[i];
-            auto& b = citizens_[j];
-            if (a.activity == Activity::Commuting || b.activity == Activity::Commuting) continue;
-            if (a.currentPlaceId < 0 || a.currentPlaceId != b.currentPlaceId) continue;
-
-            const auto* place = placeById(a.currentPlaceId);
-            if (!place || place->type == PlaceType::Shop) continue;
-
-            float contact = 0.0f;
-            switch (place->type) {
-                case PlaceType::Home: contact = 0.55f; break;
-                case PlaceType::Workplace: contact = 0.22f; break;
-                case PlaceType::Cafe: contact = 0.85f; break;
-                case PlaceType::Park: contact = 0.65f; break;
-                case PlaceType::Shop: break;
-            }
-
-            auto& ab = ensureRelationship(a, b.id);
-            auto& ba = ensureRelationship(b, a.id);
-            const float oldFamiliarity = ab.familiarity;
-
-            ab.familiarity = clamp100(ab.familiarity + contact);
-            ba.familiarity = ab.familiarity;
-
-            const float compatibility = ((a.traits.kindness + b.traits.kindness) * 0.5f - 0.35f) * 0.18f;
-            const float noise = (random01() - 0.5f) * 0.12f;
-            ab.affinity = clamp100(ab.affinity + compatibility + noise);
-            ba.affinity = ab.affinity;
-
-            a.loneliness = clamp100(a.loneliness - contact * 0.35f);
-            b.loneliness = clamp100(b.loneliness - contact * 0.35f);
-
-            bool milestone = false;
-            if (oldFamiliarity < 20.0f && ab.familiarity >= 20.0f) {
-                emit(a.id, "relationship", a.name + " and " + b.name + " are becoming familiar", 0.24f, b.id);
-                milestone = true;
-            }
-            if (oldFamiliarity < 55.0f && ab.familiarity >= 55.0f && ab.affinity > 45.0f) {
-                a.memories.push_back(Memory{day_, minute_, "friendship", b.id, 0.45f});
-                b.memories.push_back(Memory{day_, minute_, "friendship", a.id, 0.45f});
-                emit(a.id, "friendship", a.name + " and " + b.name + " have become friends", 0.48f, b.id);
-                milestone = true;
-            }
-
-            const float conversationChance = place->type == PlaceType::Workplace ? 0.008f
-                                           : place->type == PlaceType::Home ? 0.012f
-                                           : 0.028f;
-            if (!milestone && ab.lastNotableInteractionDay != day_ && ab.familiarity >= 12.0f
-                && random01() < conversationChance * contact) {
-                const char* verb = place->type == PlaceType::Park ? "stopped to chat with "
-                                 : place->type == PlaceType::Cafe ? "sat down with "
-                                 : place->type == PlaceType::Home ? "caught up with "
-                                 : "talked with ";
-                emit(a.id, "conversation", a.name + " " + verb + b.name, 0.22f, b.id);
-                ab.lastNotableInteractionDay = day_;
-                ba.lastNotableInteractionDay = day_;
-            }
-        }
-    }
-}
-
-void World::moveTo(Person& person, int placeId, Activity activity, const std::string& reason) {
-    if (placeId < 0) return;
-
-    if (person.activity == Activity::Commuting) {
-        if (person.destinationPlaceId == placeId) person.destinationActivity = activity;
-        return;
-    }
-
-    if (person.currentPlaceId == placeId) {
-        person.activity = activity;
-        return;
-    }
-
-    person.originPlaceId = person.currentPlaceId;
-    person.destinationPlaceId = placeId;
-    person.destinationActivity = activity;
-    person.travelMinutesTotal = estimateTravelMinutes(person.originPlaceId, person.destinationPlaceId);
-    person.travelMinutesRemaining = person.travelMinutesTotal;
-    person.currentPlaceId = -1;
-    person.activity = Activity::Commuting;
-
-    if (!reason.empty()) emit(person.id, "routine", person.name + " " + reason, 0.03f);
-}
-
-int World::estimateTravelMinutes(int fromPlaceId, int toPlaceId) const {
-    const auto* from = placeById(fromPlaceId);
-    const auto* to = placeById(toPlaceId);
-    if (!from || !to || fromPlaceId == toPlaceId) return 0;
-
-    const float distance = std::abs(from->position.x - to->position.x)
-                         + std::abs(from->position.y - to->position.y);
-    const int minutes = static_cast<int>(std::ceil(distance / 16.0f));
-    return std::clamp(minutes, 8, 35);
-}
-
-Place* World::placeById(int id) {
-    for (auto& place : places_) if (place.id == id) return &place;
-    return nullptr;
-}
-
-const Place* World::placeById(int id) const {
-    for (const auto& place : places_) if (place.id == id) return &place;
-    return nullptr;
-}
-
-void World::emit(int personId, std::string type, std::string text, float importance, int otherPersonId) {
-    int placeId = -1;
-    if (personId >= 0) {
-        for (const auto& citizen : citizens_) {
-            if (citizen.id == personId) {
-                placeId = citizen.currentPlaceId;
-                if (placeId < 0) placeId = citizen.destinationPlaceId;
-                break;
-            }
-        }
-    }
-    events_.push_back(Event{day_, minute_, personId, otherPersonId, placeId,
-                            std::move(type), std::move(text), importance});
-}
-
-float World::random01() {
-    return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng_);
-}
-
-int World::randomInt(int minInclusive, int maxInclusive) {
-    return std::uniform_int_distribution<int>(minInclusive, maxInclusive)(rng_);
-}
-
-std::string World::clockLabel() const {
-    std::ostringstream out;
-    out << "Day " << day_ << ' '
-        << std::setfill('0') << std::setw(2) << minute_ / 60
-        << ':' << std::setw(2) << minute_ % 60;
-    return out.str();
-}
-
-std::string World::dailySummary() const {
-    if (citizens_.empty()) return "No citizens";
-
-    float totalCash = 0.0f;
-    float totalStress = 0.0f;
-    float totalHunger = 0.0f;
-    int moneyPressure = 0;
-    int relationships = 0;
-    int walking = 0;
-
-    for (const auto& citizen : citizens_) {
-        totalCash += citizen.cash;
-        totalStress += citizen.stress;
-        totalHunger += citizen.hunger;
-        if (citizen.cash < 25.0f) ++moneyPressure;
-        if (citizen.activity == Activity::Commuting) ++walking;
-        relationships += static_cast<int>(citizen.relationships.size());
-    }
-
-    const float count = static_cast<float>(citizens_.size());
-    std::ostringstream out;
-    out << std::fixed << std::setprecision(1)
-        << "population=" << citizens_.size()
-        << " avg_cash=$" << totalCash / count
-        << " avg_stress=" << totalStress / count
-        << " avg_hunger=" << totalHunger / count
-        << " low_cash=" << moneyPressure
-        << " walking=" << walking
-        << " social_links=" << relationships / 2;
-    return out.str();
-}
-
+void World::moveTo(Person&p,int placeId,Activity activity,const std::string&reason){if(placeId<0)return;if(p.activity==Activity::Commuting){if(p.destinationPlaceId==placeId)p.destinationActivity=activity;return;}if(p.currentPlaceId==placeId){p.activity=activity;return;}p.originPlaceId=p.currentPlaceId;p.destinationPlaceId=placeId;p.destinationActivity=activity;p.travelMinutesTotal=estimateTravelMinutes(p.originPlaceId,placeId);p.travelMinutesRemaining=p.travelMinutesTotal;p.currentPlaceId=-1;p.activity=Activity::Commuting;emit(p.id,"departure",p.name+" started walking",.06f);if(!reason.empty())emit(p.id,"routine",p.name+" "+reason,.03f);}
+int World::estimateTravelMinutes(int a,int b)const{auto*from=placeById(a);auto*to=placeById(b);if(!from||!to||a==b)return 0;float d=std::abs(from->position.x-to->position.x)+std::abs(from->position.y-to->position.y);return std::clamp((int)std::ceil(d/(16.f*std::max(.7f,1.f))),8,35);}
+Place* World::placeById(int id){for(auto&p:places_)if(p.id==id)return&p;return nullptr;}const Place* World::placeById(int id)const{for(auto&p:places_)if(p.id==id)return&p;return nullptr;}Person* World::personById(int id){for(auto&p:citizens_)if(p.id==id)return&p;return nullptr;}const Person* World::personById(int id)const{for(auto&p:citizens_)if(p.id==id)return&p;return nullptr;}
+void World::remember(Person&p,std::string tag,int other,float intensity){p.memories.push_back(Memory{day_,minute_,std::move(tag),other,intensity});if(p.memories.size()>64)p.memories.erase(p.memories.begin());}
+void World::emit(int id,std::string type,std::string text,float imp,int other){int place=-1;if(auto*p=personById(id)){place=p->currentPlaceId;if(place<0)place=p->destinationPlaceId;}events_.push_back(Event{day_,minute_,id,other,place,std::move(type),std::move(text),imp});}
+float World::random01(){return std::uniform_real_distribution<float>(0,1)(rng_);}int World::randomInt(int a,int b){return std::uniform_int_distribution<int>(a,b)(rng_);}
+std::string World::clockLabel()const{std::ostringstream o;o<<"Day "<<day_<<' '<<std::setfill('0')<<std::setw(2)<<minute_/60<<':'<<std::setw(2)<<minute_%60;return o.str();}
+std::string World::dailySummary()const{if(citizens_.empty())return"No citizens";float cash=0,stress=0,hunger=0;int walking=0,links=0,active=0;for(auto&c:citizens_){cash+=c.cash;stress+=c.stress;hunger+=c.hunger;walking+=c.activity==Activity::Commuting;links+=(int)c.relationships.size();active+=c.activeInteractionId>=0;}float n=(float)citizens_.size();std::ostringstream o;o<<std::fixed<<std::setprecision(1)<<"population="<<citizens_.size()<<" avg_cash=$"<<cash/n<<" avg_stress="<<stress/n<<" avg_hunger="<<hunger/n<<" walking="<<walking<<" social_links="<<links/2<<" interacting="<<active;return o.str();}
 } // namespace sim

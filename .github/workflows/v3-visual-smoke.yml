@@ -1,0 +1,38 @@
+name: V3 neighborhood visual smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [mason-v3]
+    paths:
+      - 'src/neighborhood_smoke.cpp'
+      - 'src/World.cpp'
+      - 'include/sim/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/v3-visual-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install renderer dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg xvfb libasound2-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev libxinerama-dev
+      - name: Configure
+        run: cmake -S . -B build -DSIMULATION_BUILD_VIEWER=ON
+      - name: Build V3 smoke
+        run: cmake --build build --target simulation_neighborhood_smoke --parallel
+      - name: Render seed 48192 whole neighborhood
+        run: xvfb-run -a ./build/simulation_neighborhood_smoke 48192 20 build/v3-neighborhood-smoke
+      - name: Verify MP4
+        run: |
+          test -s build/v3-neighborhood-smoke/mason-v3-neighborhood-smoke.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 build/v3-neighborhood-smoke/mason-v3-neighborhood-smoke.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mason-v3-neighborhood-smoke-48192
+          path: build/v3-neighborhood-smoke/mason-v3-neighborhood-smoke.mp4
+          if-no-files-found: error
+          retention-days: 7

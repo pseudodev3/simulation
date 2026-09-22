@@ -64,9 +64,7 @@ function person(i,x,z){
 for(let i=0;i<12;i++)person(i,-29+i*2.4,i%2?3.8:-3.8);
 
 const clock=new THREE.Clock();
-function animate(){
- requestAnimationFrame(animate);
- const t=clock.getElapsedTime();
+function renderAt(t){
  people.forEach((p,i)=>{
    const x=((t*p.speed+i*4+60)%60)-30;p.g.position.x=x;p.g.position.z=p.lane+Math.sin(t*.55+p.phase)*.12;
    p.g.position.y=Math.abs(Math.sin(t*5*p.speed+p.phase))*.06;
@@ -75,8 +73,32 @@ function animate(){
  const cycle=(Math.sin(t*.045)+1)/2;
  scene.background.setHSL(.56,.42,.18+cycle*.48);scene.fog.color.copy(scene.background);
  sun.intensity=.35+cycle*3.1;sun.position.x=Math.cos(t*.045)*25;sun.position.y=5+cycle*25;
- camera.position.x=20+Math.sin(t*.09)*4;camera.position.z=26+Math.cos(t*.075)*3;camera.lookAt(1,1.4,0);
+ const hero=people[0].g.position;
+ if(t<7){
+   camera.position.set(20+Math.sin(t*.09)*4,19,26+Math.cos(t*.075)*3);
+   camera.lookAt(1,1.4,0);
+ }else if(t<15){
+   const follow=(t-7)/8;
+   const targetX=hero.x+6.5;
+   const targetZ=hero.z+9.5;
+   camera.position.x=THREE.MathUtils.lerp(20,targetX,Math.min(1,follow*1.8));
+   camera.position.y=THREE.MathUtils.lerp(19,6.8,Math.min(1,follow*1.8));
+   camera.position.z=THREE.MathUtils.lerp(26,targetZ,Math.min(1,follow*1.8));
+   camera.lookAt(hero.x+2.2,1.5,hero.z);
+ }else{
+   const out=Math.min(1,(t-15)/3);
+   camera.position.x=THREE.MathUtils.lerp(hero.x+6.5,18,out);
+   camera.position.y=THREE.MathUtils.lerp(6.8,17,out);
+   camera.position.z=THREE.MathUtils.lerp(hero.z+9.5,24,out);
+   camera.lookAt(2,1.3,0);
+ }
  renderer.render(scene,camera);
 }
-animate();
-addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+window.__MASON_RENDER_AT__=renderAt;
+const captureMode=new URLSearchParams(location.search).has('capture');
+function animate(){
+ requestAnimationFrame(animate);
+ renderAt(clock.getElapsedTime());
+}
+if(captureMode) renderAt(0); else animate();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);if(captureMode)renderAt(0)});

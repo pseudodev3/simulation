@@ -19,6 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Install system FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
       - run: npm install
       - run: npx playwright install --with-deps chromium
       - name: Render 20 second cartoon clip
@@ -26,6 +31,10 @@ jobs:
           npm run dev -- --port 4173 > /tmp/mason-stage.log 2>&1 &
           sleep 3
           node scripts/capture.mjs
+      - name: Verify MP4
+        run: |
+          test -s output/mason-stage.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 output/mason-stage.mp4
       - uses: actions/upload-artifact@v4
         with:
           name: mason-stage-cartoon-clip

@@ -1,0 +1,35 @@
+name: Mason Stage clip
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mason-v3]
+    paths:
+      - 'stage/**'
+      - '.github/workflows/mason-stage-clip.yml'
+
+jobs:
+  render-clip:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: stage/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Render 20 second cartoon clip
+        run: |
+          npm run dev -- --port 4173 > /tmp/mason-stage.log 2>&1 &
+          sleep 3
+          node scripts/capture.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mason-stage-cartoon-clip
+          path: stage/output/mason-stage.mp4
+          retention-days: 7
